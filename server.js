@@ -4,6 +4,12 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 3000;
 
+// Keep-alive: evita o servidor dormir no plano free
+setInterval(() => {
+  fetch('https://paceme-webhook.onrender.com/')
+    .catch(() => {});
+}, 4 * 60 * 1000);
+
 app.get('/', (req, res) => {
   res.send('Paceme.ia webhook online ✅');
 });
