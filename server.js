@@ -27,10 +27,9 @@ app.post('/webhook', async (req, res) => {
 
     const claudeResponse = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
-      headers: {
+     headers: { 
         'Content-Type': 'application/json',
-        'x-api-key': process.env.CLAUDE_API_KEY,
-        'anthropic-version': '2023-06-01'
+        'Client-Token': process.env.ZAPI_CLIENT_TOKEN
       },
       body: JSON.stringify({
         model: 'claude-haiku-4-5-20251001',
