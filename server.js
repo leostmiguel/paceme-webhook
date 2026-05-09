@@ -52,12 +52,12 @@ app.post('/webhook', async (req, res) => {
     }
 
     // Envia resposta pelo Z-API
-    // Envia resposta pelo Z-API
-    await fetch(`https://api.z-api.io/instances/${process.env.ZAPI_INSTANCE}/token/${process.env.ZAPI_TOKEN}/send-text`, {
+    const zapiResponse = await fetch(`https://api.z-api.io/instances/${process.env.ZAPI_INSTANCE}/token/${process.env.ZAPI_TOKEN}/send-text`, {
       method: 'POST',
       headers: { 
-        'Content-Type': 'application/json',
-        'Client-Token': process.env.ZAPI_CLIENT_TOKEN
+        'Content-Type': 'application/json'
       },
       body: JSON.stringify({ phone, message: reply })
     });
+    const zapiData = await zapiResponse.json();
+    console.log(`Z-API status: ${zapiResponse.status} | resposta: ${JSON.stringify(zapiData)}`);
