@@ -4,17 +4,14 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 3000;
 
-// Rota de health check — Render usa isso para saber que o server está vivo
 app.get('/', (req, res) => {
   res.send('Paceme.ia webhook online ✅');
 });
 
-// Rota principal que recebe mensagens da Z-API
 app.post('/webhook', async (req, res) => {
   try {
     const body = req.body;
 
-    // Ignora mensagens enviadas pelo próprio bot
     if (body.fromMe) {
       return res.sendStatus(200);
     }
@@ -28,7 +25,6 @@ app.post('/webhook', async (req, res) => {
 
     console.log(`📩 Mensagem de ${phone}: ${message}`);
 
-    // Chama a Claude API
     const claudeResponse = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -48,16 +44,27 @@ app.post('/webhook', async (req, res) => {
     const reply = claudeData.content?.[0]?.text;
 
     if (!reply) {
+      console.log('Claude não retornou resposta:', JSON.stringify(claudeData));
       return res.sendStatus(200);
     }
 
-    // Envia resposta pelo Z-API
     const zapiResponse = await fetch(`https://api.z-api.io/instances/${process.env.ZAPI_INSTANCE}/token/${process.env.ZAPI_TOKEN}/send-text`, {
       method: 'POST',
-      headers: { 
-        'Content-Type': 'application/json'
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ phone, message: reply })
     });
+
     const zapiData = await zapiResponse.json();
     console.log(`Z-API status: ${zapiResponse.status} | resposta: ${JSON.stringify(zapiData)}`);
+
+    res.sendStatus(200);
+
+  } catch (err) {
+    console.error('Erro no webhook:', err);
+    res.sendStatus(500);
+  }
+});
+
+app.listen(PORT, () => {
+  console.log(`Paceme.ia rodando na porta ${PORT}`);
+});
