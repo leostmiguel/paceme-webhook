@@ -27,9 +27,10 @@ app.post('/webhook', async (req, res) => {
 
     const claudeResponse = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
-     headers: { 
+      headers: {
         'Content-Type': 'application/json',
-        'Client-Token': process.env.ZAPI_CLIENT_TOKEN
+        'x-api-key': process.env.CLAUDE_API_KEY,
+        'anthropic-version': '2023-06-01'
       },
       body: JSON.stringify({
         model: 'claude-haiku-4-5-20251001',
@@ -49,7 +50,10 @@ app.post('/webhook', async (req, res) => {
 
     const zapiResponse = await fetch(`https://api.z-api.io/instances/${process.env.ZAPI_INSTANCE}/token/${process.env.ZAPI_TOKEN}/send-text`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Client-Token': process.env.ZAPI_CLIENT_TOKEN
+      },
       body: JSON.stringify({ phone, message: reply })
     });
 
