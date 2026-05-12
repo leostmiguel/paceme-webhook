@@ -64,7 +64,7 @@ async function chamarClaude(messages, tentativa = 1) {
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.CLAUDE_API_KEY, 'anthropic-version': '2023-06-01' },
-    body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 1024, system: process.env.SYSTEM_PROMPT, messages })
+    body: JSON.stringify({ model: process.env.CLAUDE_MODEL || 'claude-haiku-4-5-20251001', max_tokens: 1024, system: process.env.SYSTEM_PROMPT, messages })
   });
   const data = await res.json();
   if (data.type === 'error' && data.error?.type === 'overloaded_error' && tentativa < 3) {
