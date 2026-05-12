@@ -60,6 +60,21 @@ async function enviarWhatsApp(phone, message) {
   return await res.json();
 }
 
+async function chamarClaude(messages, tentativa = 1) {
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.CLAUDE_API_KEY, 'anthropic-version': '2023-06-01' },
+    body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 1024, system: process.env.SYSTEM_PROMPT, messages })
+  });
+  const data = await res.json();
+  if (data.type === 'error' && data.error?.type === 'overloaded_error' && tentativa < 3) {
+    console.log(`Claude sobrecarregado, tentativa ${tentativa}. Aguardando...`);
+    await new Promise(r => setTimeout(r, 3000 * tentativa));
+    return chamarClaude(messages, tentativa + 1);
+  }
+  return data;
+}
+
 app.get('/', (req, res) => {
   res.send('Paceme.ia webhook online');
 });
@@ -80,12 +95,7 @@ app.post('/webhook', async (req, res) => {
     await salvarMensagem(phone, 'user', message);
     const historico = await getHistorico(phone);
     const messages = historico.map(h => ({ role: h.role, content: h.content }));
-    const claudeResponse = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.CLAUDE_API_KEY, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 1024, system: process.env.SYSTEM_PROMPT, messages })
-    });
-    const claudeData = await claudeResponse.json();
+    const claudeData = await chamarClaude(messages);
     const reply = claudeData.content?.[0]?.text;
     if (!reply) {
       console.log('Claude sem resposta:', JSON.stringify(claudeData));
