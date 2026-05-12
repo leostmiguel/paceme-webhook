@@ -61,21 +61,46 @@ async function enviarWhatsApp(phone, message) {
 }
 
 app.get('/', (req, res) => {
-  res.send('Paceme.ia webhook online ✅');
+  res.send('Paceme.ia webhook online');
 });
 
 app.post('/webhook', async (req, res) => {
   try {
     const body = req.body;
     if (body.fromMe) return res.sendStatus(200);
-
     const phone = body.phone;
     const message = body.text?.message;
     if (!phone || !message) return res.sendStatus(200);
-
-    console.log(`📩 Mensagem de ${phone}: ${message}`);
-
+    console.log(`Mensagem de ${phone}: ${message}`);
     const usuario = await getOuCriarUsuario(phone);
-
     if (!trialAtivo(usuario)) {
-      await enviarWhatsApp(phone, `Olá! 👋 Seu período de teste gratuito de ${usuario.trial_dias} dias chegou ao fim.\n\nPara continuar treinando com o Pace, acesse o link abaixo e assine o Paceme.ia:\
+      await enviarWhatsApp(phone, `Ola! Seu periodo de teste de ${usuario.trial_dias} dias chegou ao fim. Para continuar com o Pace, assine o Paceme.ia: https://wa.me/5548991969971`);
+      return res.sendStatus(200);
+    }
+    await salvarMensagem(phone, 'user', message);
+    const historico = await getHistorico(phone);
+    const messages = historico.map(h => ({ role: h.role, content: h.content }));
+    const claudeResponse = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.CLAUDE_API_KEY, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 1024, system: process.env.SYSTEM_PROMPT, messages })
+    });
+    const claudeData = await claudeResponse.json();
+    const reply = claudeData.content?.[0]?.text;
+    if (!reply) {
+      console.log('Claude sem resposta:', JSON.stringify(claudeData));
+      return res.sendStatus(200);
+    }
+    await salvarMensagem(phone, 'assistant', reply);
+    const zapiData = await enviarWhatsApp(phone, reply);
+    console.log(`Z-API: ${JSON.stringify(zapiData)}`);
+    res.sendStatus(200);
+  } catch (err) {
+    console.error('Erro:', err);
+    res.sendStatus(500);
+  }
+});
+
+app.listen(PORT, () => {
+  console.log(`Paceme.ia rodando na porta ${PORT}`);
+});
