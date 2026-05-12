@@ -15,8 +15,7 @@ const data = await res.json();
 if (data.length > 0) return data[0];
 await fetch(`${SUPABASE_URL}/rest/v1/usuarios`, {
 method: 'POST',
-headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Ty
-body: JSON.stringify({ phone })
+headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': body: JSON.stringify({ phone })
 });
 const res2 = await fetch(`${SUPABASE_URL}/rest/v1/usuarios?phone=eq.${phone}`, {
 headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
@@ -32,32 +31,26 @@ const dias = (agora - inicio) / (1000 * 60 * 60 * 24);
 return dias <= usuario.trial_dias;
 }
 async function getHistorico(phone) {
-const res = await fetch(`${SUPABASE_URL}/rest/v1/conversas?phone=eq.${phone}&order=created_
-headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+const res = await fetch(`${SUPABASE_URL}/rest/v1/conversas?phone=eq.${phone}&order=created_headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
 });
 return await res.json();
 }
 async function salvarMensagem(phone, role, content) {
 await fetch(`${SUPABASE_URL}/rest/v1/conversas`, {
 method: 'POST',
-headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Ty
-body: JSON.stringify({ phone, role, content })
+headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': body: JSON.stringify({ phone, role, content })
 });
 }
 async function enviarWhatsApp(phone, message) {
-const res = await fetch(`https://api.z-api.io/instances/${process.env.ZAPI_INSTANCE}/token/
-method: 'POST',
-headers: { 'Content-Type': 'application/json', 'Client-Token': process.env.ZAPI_CLIENT_TO
-body: JSON.stringify({ phone, message })
+const res = await fetch(`https://api.z-api.io/instances/${process.env.ZAPI_INSTANCE}/token/${method: 'POST',
+headers: { 'Content-Type': 'application/json', 'Client-Token': process.env.ZAPI_CLIENT_TOKEN body: JSON.stringify({ phone, message })
 });
 return await res.json();
 }
 async function chamarClaude(messages, tentativa = 1) {
 const res = await fetch('https://api.anthropic.com/v1/messages', {
 method: 'POST',
-headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.CLAUDE_API_KEY, '
-body: JSON.stringify({ model: process.env.CLAUDE_MODEL || 'claude-haiku-4-5-20251001', ma
-});
+headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.CLAUDE_API_KEY, 'body: JSON.stringify({ model: process.env.CLAUDE_MODEL || 'claude-haiku-4-5-20251001', max_});
 const data = await res.json();
 if (data.type === 'error' && data.error?.type === 'overloaded_error' && tentativa < 3) {
 console.log(`Claude sobrecarregado, tentativa ${tentativa}. Aguardando...`);
@@ -79,8 +72,7 @@ if (!phone || !message) return res.sendStatus(200);
 console.log(`Mensagem de ${phone}: ${message}`);
 const usuario = await getOuCriarUsuario(phone);
 if (!trialAtivo(usuario)) {
-await enviarWhatsApp(phone, `Ola! Seu periodo de teste de ${usuario.trial_dias} dias ch
-return res.sendStatus(200);
+await enviarWhatsApp(phone, `Ola! Seu periodo de teste de ${usuario.trial_dias} dias chegou return res.sendStatus(200);
 }
 // CORREÇÃO: busca histórico ANTES de salvar a mensagem do usuário
 // e adiciona a mensagem atual apenas na memória para o Claude processar
