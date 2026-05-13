@@ -92,15 +92,16 @@ app.post('/webhook', async (req, res) => {
       await enviarWhatsApp(phone, `Ola! Seu periodo de teste de ${usuario.trial_dias} dias chegou ao fim. Para continuar com o Pace, assine o Paceme.ia: https://wa.me/5548991969971`);
       return res.sendStatus(200);
     }
-    await salvarMensagem(phone, 'user', message);
+    
     const historico = await getHistorico(phone);
-    const messages = historico.map(h => ({ role: h.role, content: h.content }));
+    const messages = [...historico.map(h => ({ role: h.role, content: h.content })), { role: 'user', content: message }];
     const claudeData = await chamarClaude(messages);
     const reply = claudeData.content?.[0]?.text;
     if (!reply) {
       console.log('Claude sem resposta:', JSON.stringify(claudeData));
       return res.sendStatus(200);
     }
+    await salvarMensagem(phone, 'user', message);
     await salvarMensagem(phone, 'assistant', reply);
     const zapiData = await enviarWhatsApp(phone, reply);
     console.log(`Z-API: ${JSON.stringify(zapiData)}`);
