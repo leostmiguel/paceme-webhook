@@ -74,6 +74,22 @@ async function chamarClaude(messages, tentativa = 1) {
   }
   return data;
 }
+async function transcreverAudio(audioUrl) {
+  const audioRes = await fetch(audioUrl);
+  const audioBuffer = await audioRes.arrayBuffer();
+  const blob = new Blob([audioBuffer], { type: 'audio/ogg' });
+  const formData = new FormData();
+  formData.append('file', blob, 'audio.ogg');
+  formData.append('model', 'whisper-1');
+  formData.append('language', 'pt');
+  const res = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${process.env.OPENAI_API_KEY}` },
+    body: formData
+  });
+  const data = await res.json();
+  return data.text;
+}  
 
 app.get('/', (req, res) => {
   res.send('Paceme.ia webhook online');
@@ -85,8 +101,12 @@ app.post('/webhook', async (req, res) => {
     if (body.fromMe) return res.sendStatus(200);
     const phone = body.phone;
     const message = body.text?.message;
-    if (!phone || !message) return res.sendStatus(200);
-    console.log(`Mensagem de ${phone}: ${message}`);
+    let mensagemFinal = message;
+    if (!message && body.audio?.audioUrl) {
+      mensagemFinal = await transcreverAudio(body.audio.audioUrl);
+    }
+    if (!phone || !mensagemFinal) return res.sendStatus(200);
+    console.log(`Mensagem de ${phone}: ${mensagemFinal}`);
     const usuario = await getOuCriarUsuario(phone);
     if (!trialAtivo(usuario)) {
       await enviarWhatsApp(phone, `Ola! Seu periodo de teste de ${usuario.trial_dias} dias chegou ao fim. Para continuar com o Pace, assine o Paceme.ia: https://wa.me/5548991969971`);
@@ -94,14 +114,14 @@ app.post('/webhook', async (req, res) => {
     }
     
     const historico = await getHistorico(phone);
-    const messages = [...historico.map(h => ({ role: h.role, content: h.content })), { role: 'user', content: message }];
+    const messages = [...historico.map(h => ({ role: h.role, content: h.content })), { role: 'user', content: mensagemFinal }];
     const claudeData = await chamarClaude(messages);
     const reply = claudeData.content?.[0]?.text;
     if (!reply) {
       console.log('Claude sem resposta:', JSON.stringify(claudeData));
       return res.sendStatus(200);
     }
-    await salvarMensagem(phone, 'user', message);
+    await salvarMensagem(phone, 'user', mensagemFinal);
     await salvarMensagem(phone, 'assistant', reply);
     const zapiData = await enviarWhatsApp(phone, reply);
     console.log(`Z-API: ${JSON.stringify(zapiData)}`);
