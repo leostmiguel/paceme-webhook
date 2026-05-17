@@ -98,16 +98,23 @@ app.get('/', (req, res) => {
 
 app.get('/daily-message', async (req, res) => {
   try {
+    const agora = new Date();
+    const horaBrasilia = agora.getUTCHours() - 3;
+    if (horaBrasilia < 7 || horaBrasilia >= 8) {
+      return res.json({ ok: true, msg: 'Fora do horario de envio', hora: horaBrasilia });
+    }
+
     const resultado = await fetch(`${SUPABASE_URL}/rest/v1/usuarios?status=eq.ativo&order=created_at.asc`, {
       headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
     });
     const usuarios = await resultado.json();
 
     const mensagens = [
-      'Bom dia! Seu corpo ja esta pronto para o proximo passo. Como ta o plano pra hoje?',
-      'Bom dia! Um passo de cada vez - mas todo dia um passo. Vai correr hoje?',
-      'Oi! Amanheceu com energia? O Pace ta aqui pra te acompanhar. Bora?',
-      'Bom dia! Consistencia e o que separa quem sonha de quem conquista. Hoje e dia de treino?'
+      'Bom dia! Como voce ta hoje? O Pace ta aqui, pronto pra correr junto com voce. Vai rolar um treino hoje?',
+      'Oi! Mais um dia, mais uma chance de evoluir no seu ritmo. Como ta o corpo hoje?',
+      'Bom dia! Consistencia e o segredo — e voce ja provou que tem. Vai correr hoje?',
+      'Oi! O Pace nao esquece de voce nao. Como foi o sono? Ta pronto pra mais um passo?',
+      'Bom dia! Cada treino conta, mesmo os menores. O que voce ta sentindo hoje?'
     ];
 
     for (const usuario of usuarios) {
