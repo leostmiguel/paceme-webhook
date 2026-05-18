@@ -60,11 +60,11 @@ async function enviarWhatsApp(phone, message) {
   return await res.json();
 }
 
-async function enviarImagemWhatsApp(phone, imageUrl, caption) {
+async function enviarImagemWhatsApp(phone, imageUrl) {
   const res = await fetch(`https://api.z-api.io/instances/${process.env.ZAPI_INSTANCE}/token/${process.env.ZAPI_TOKEN}/send-image`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Client-Token': process.env.ZAPI_CLIENT_TOKEN },
-    body: JSON.stringify({ phone, image: imageUrl, caption: caption || '' })
+    body: JSON.stringify({ phone, image: imageUrl, caption: '' })
   });
   return await res.json();
 }
@@ -111,7 +111,7 @@ async function getPerfilComportamental(phone) {
 
 async function atualizarPerfilComportamental(phone, historico) {
   try {
-    const promptAnalise = `Analise essa conversa entre o Pace e o corredor e extraia informacoes comportamentais. Responda APENAS com JSON valido, sem texto adicional:
+    const promptAnalise = `Analise essa conversa e extraia informacoes comportamentais. Responda APENAS com JSON valido:
 {"tende_a_se_cobrar":true ou false,"reage_bem_incentivo":true ou false,"tende_a_exagerar":true ou false,"prefere_linguagem":"leve ou direta ou tecnica","responde_melhor_a":"texto curto","padrao_ausencia":"texto curto ou null","melhor_dia_semana":"dia ou null","pior_dia_semana":"dia ou null","notas_comportamentais":"observacoes livres"}
 
 Conversa:
@@ -140,9 +140,9 @@ ${historico.map(h => `${h.role === 'user' ? 'Corredor' : 'Pace'}: ${h.content}`)
         body: JSON.stringify({ phone, ...perfil })
       });
     }
-    console.log(`Perfil comportamental atualizado para ${phone}`);
+    console.log(`Perfil atualizado para ${phone}`);
   } catch (err) {
-    console.error('Erro ao atualizar perfil:', err);
+    console.error('Erro perfil:', err);
   }
 }
 
@@ -158,13 +158,13 @@ function montarContextoPerfil(perfil) {
   if (perfil.melhor_dia_semana) linhas.push(`Melhor dia para treinar: ${perfil.melhor_dia_semana}.`);
   if (perfil.pior_dia_semana) linhas.push(`Dia mais dificil: ${perfil.pior_dia_semana}.`);
   if (linhas.length === 0) return '';
-  return `\n\nCONTEXTO DO CORREDOR (use para personalizar suas respostas):\n${linhas.join('\n')}`;
+  return `\n\nCONTEXTO DO CORREDOR:\n${linhas.join('\n')}`;
 }
 
 async function extrairDadosTreino(mensagem) {
   try {
-    const prompt = `Analise essa mensagem e verifique se o corredor esta registrando um treino de corrida com dados numericos. Se sim, extraia os dados. Responda APENAS com JSON valido:
-{"e_registro_treino": true ou false, "distancia": numero em km ou null, "pace": "MM:SS" ou null, "tempo": "MM:SS" ou null, "nome_corredor": "nome se mencionado ou null"}
+    const prompt = `Analise se o corredor esta registrando um treino de corrida com dados numericos. Responda APENAS com JSON valido:
+{"e_registro_treino":true ou false,"distancia":numero em km ou null,"pace":"MM:SS ou null","tempo":"MM:SS ou null","nome_corredor":"nome ou null"}
 
 Mensagem: "${mensagem}"`;
 
@@ -176,58 +176,29 @@ Mensagem: "${mensagem}"`;
     const data = await res.json();
     const texto = data.content?.[0]?.text;
     if (!texto) return null;
-    const resultado = JSON.parse(texto);
+    const resultado = JSON.parse(texto.trim());
     return resultado.e_registro_treino ? resultado : null;
   } catch (err) {
+    console.error('Erro extrairDadosTreino:', err);
     return null;
   }
 }
 
 async function gerarCardTreino(nome, distancia, pace, tempo) {
   try {
-    const html = `
-<div style="width:600px;height:600px;background:#0a0a0a;position:relative;overflow:hidden;font-family:Arial Black,Impact,sans-serif;">
-  <div style="position:absolute;left:0;top:0;width:100%;height:6px;background:#8DFF5A;"></div>
-  <div style="position:absolute;left:0;bottom:0;width:100%;height:6px;background:#8DFF5A;"></div>
-  <div style="position:absolute;left:0;top:100px;width:280px;opacity:0.2;">
-    <div style="height:4px;background:#8DFF5A;margin-bottom:18px;width:200px;border-radius:4px;"></div>
-    <div style="height:4px;background:#8DFF5A;margin-bottom:18px;width:150px;border-radius:4px;"></div>
-    <div style="height:4px;background:#8DFF5A;margin-bottom:18px;width:240px;border-radius:4px;"></div>
-    <div style="height:4px;background:#8DFF5A;margin-bottom:18px;width:180px;border-radius:4px;"></div>
-  </div>
-  <div style="position:absolute;top:36px;left:50px;font-size:52px;font-weight:900;color:white;letter-spacing:-1px;">PACEME<span style="color:#8DFF5A;font-size:32px;">.ia</span></div>
-  <div style="position:absolute;top:100px;left:50px;font-size:16px;letter-spacing:6px;color:#8DFF5A;font-weight:900;">TREINO CONCLUIDO</div>
-  <div style="position:absolute;top:135px;left:50px;font-size:26px;color:#ccc;font-weight:700;">${nome || 'Corredor'}</div>
-  <div style="position:absolute;top:190px;left:50px;">
-    <div style="font-size:14px;letter-spacing:4px;color:#8DFF5A;margin-bottom:6px;">DISTANCIA</div>
-    <div style="font-size:80px;line-height:72px;color:white;font-weight:900;">${distancia || '-'}<span style="font-size:28px;color:#8DFF5A;margin-left:6px;">km</span></div>
-  </div>
-  <div style="position:absolute;top:330px;left:50px;">
-    <div style="font-size:14px;letter-spacing:4px;color:#8DFF5A;margin-bottom:6px;">PACE</div>
-    <div style="font-size:72px;line-height:64px;color:white;font-weight:900;">${pace || '-'}<span style="font-size:24px;color:#8DFF5A;margin-left:6px;">/km</span></div>
-  </div>
-  <div style="position:absolute;top:460px;left:50px;">
-    <div style="font-size:14px;letter-spacing:4px;color:#8DFF5A;margin-bottom:6px;">TEMPO</div>
-    <div style="font-size:52px;line-height:48px;color:white;font-weight:900;">${tempo || '-'}<span style="font-size:20px;color:#8DFF5A;margin-left:6px;">min</span></div>
-  </div>
-  <div style="position:absolute;right:50px;top:190px;width:200px;padding:20px;border:2px dashed rgba(141,255,90,0.4);border-radius:16px;text-align:center;">
-    <div style="font-size:14px;color:#8DFF5A;letter-spacing:2px;margin-bottom:8px;">PATROCINADOR</div>
-    <div style="font-size:18px;color:#555;font-weight:900;">SUA MARCA AQUI</div>
-  </div>
-  <div style="position:absolute;bottom:20px;left:50px;font-size:14px;color:#555;">paceme.ia · seu parceiro de corrida</div>
-  <div style="position:absolute;bottom:20px;right:50px;font-size:14px;color:#8DFF5A;font-weight:900;">@paceme.ia</div>
-</div>`;
+    const html = `<div style="width:600px;height:600px;background:#0a0a0a;position:relative;overflow:hidden;font-family:Arial Black,Impact,sans-serif;"><div style="position:absolute;left:0;top:0;width:100%;height:6px;background:#8DFF5A;"></div><div style="position:absolute;left:0;bottom:0;width:100%;height:6px;background:#8DFF5A;"></div><div style="position:absolute;left:0;top:100px;width:280px;opacity:0.2;"><div style="height:4px;background:#8DFF5A;margin-bottom:18px;width:200px;border-radius:4px;"></div><div style="height:4px;background:#8DFF5A;margin-bottom:18px;width:150px;border-radius:4px;"></div><div style="height:4px;background:#8DFF5A;margin-bottom:18px;width:240px;border-radius:4px;"></div><div style="height:4px;background:#8DFF5A;margin-bottom:18px;width:180px;border-radius:4px;"></div></div><div style="position:absolute;top:36px;left:50px;font-size:52px;font-weight:900;color:white;letter-spacing:-1px;">PACEME<span style="color:#8DFF5A;font-size:32px;">.ia</span></div><div style="position:absolute;top:100px;left:50px;font-size:16px;letter-spacing:6px;color:#8DFF5A;font-weight:900;">TREINO CONCLUIDO</div><div style="position:absolute;top:135px;left:50px;font-size:26px;color:#ccc;font-weight:700;">${nome || 'Corredor'}</div><div style="position:absolute;top:190px;left:50px;"><div style="font-size:14px;letter-spacing:4px;color:#8DFF5A;margin-bottom:6px;">DISTANCIA</div><div style="font-size:80px;line-height:72px;color:white;font-weight:900;">${distancia || '-'}<span style="font-size:28px;color:#8DFF5A;margin-left:6px;">km</span></div></div><div style="position:absolute;top:330px;left:50px;"><div style="font-size:14px;letter-spacing:4px;color:#8DFF5A;margin-bottom:6px;">PACE</div><div style="font-size:72px;line-height:64px;color:white;font-weight:900;">${pace || '-'}<span style="font-size:24px;color:#8DFF5A;margin-left:6px;">/km</span></div></div><div style="position:absolute;top:460px;left:50px;"><div style="font-size:14px;letter-spacing:4px;color:#8DFF5A;margin-bottom:6px;">TEMPO</div><div style="font-size:52px;line-height:48px;color:white;font-weight:900;">${tempo || '-'}<span style="font-size:20px;color:#8DFF5A;margin-left:6px;">min</span></div></div><div style="position:absolute;right:50px;top:190px;width:200px;padding:20px;border:2px dashed rgba(141,255,90,0.4);border-radius:16px;text-align:center;"><div style="font-size:14px;color:#8DFF5A;letter-spacing:2px;margin-bottom:8px;">PATROCINADOR</div><div style="font-size:18px;color:#555;font-weight:900;">SUA MARCA AQUI</div></div><div style="position:absolute;bottom:20px;left:50px;font-size:14px;color:#555;">paceme.ia · seu parceiro de corrida</div><div style="position:absolute;bottom:20px;right:50px;font-size:14px;color:#8DFF5A;font-weight:900;">@paceme.ia</div></div>`;
 
     const credentials = Buffer.from(`${process.env.HCTI_USER_ID}:${process.env.HCTI_API_KEY}`).toString('base64');
     const res = await fetch('https://hcti.io/v1/image', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Basic ${credentials}` },
-      body: JSON.stringify({ html, css: '', google_fonts: '' })
+      body: JSON.stringify({ html })
     });
     const data = await res.json();
+    console.log('HCTI response:', JSON.stringify(data));
     return data.url || null;
   } catch (err) {
-    console.error('Erro ao gerar card:', err);
+    console.error('Erro gerarCard:', err);
     return null;
   }
 }
@@ -294,9 +265,13 @@ app.post('/webhook', async (req, res) => {
     const systemPromptFinal = process.env.SYSTEM_PROMPT + contextoPerfil;
     const messages = [...historico.map(h => ({ role: h.role, content: h.content })), { role: 'user', content: mensagemFinal }];
 
-    const claudeData = await chamarClaude(messages, systemPromptFinal);
-    const reply = claudeData.content?.[0]?.text;
+    // Roda deteccao de treino e Claude em paralelo
+    const [claudeData, dadosTreino] = await Promise.all([
+      chamarClaude(messages, systemPromptFinal),
+      extrairDadosTreino(mensagemFinal)
+    ]);
 
+    const reply = claudeData.content?.[0]?.text;
     if (!reply) {
       console.log('Claude sem resposta:', JSON.stringify(claudeData));
       return res.sendStatus(200);
@@ -306,21 +281,23 @@ app.post('/webhook', async (req, res) => {
     await salvarMensagem(phone, 'assistant', reply);
     await enviarWhatsApp(phone, reply);
 
-    // Verifica se e registro de treino e gera card em background
-    extrairDadosTreino(mensagemFinal).then(async (dadosTreino) => {
-      if (dadosTreino) {
-        console.log(`Treino detectado para ${phone}:`, dadosTreino);
-        const nomeUsuario = dadosTreino.nome_corredor || 'Corredor';
-        const cardUrl = await gerarCardTreino(nomeUsuario, dadosTreino.distancia, dadosTreino.pace, dadosTreino.tempo);
-        if (cardUrl) {
-          await new Promise(r => setTimeout(r, 2000));
-          await enviarImagemWhatsApp(phone, cardUrl, '');
-          console.log(`Card enviado para ${phone}: ${cardUrl}`);
-        }
+    // Se detectou treino, gera e envia card
+    if (dadosTreino) {
+      console.log(`Treino detectado para ${phone}:`, dadosTreino);
+      const cardUrl = await gerarCardTreino(
+        dadosTreino.nome_corredor || 'Corredor',
+        dadosTreino.distancia,
+        dadosTreino.pace,
+        dadosTreino.tempo
+      );
+      if (cardUrl) {
+        await new Promise(r => setTimeout(r, 1500));
+        await enviarImagemWhatsApp(phone, cardUrl);
+        console.log(`Card enviado para ${phone}: ${cardUrl}`);
       }
-    }).catch(err => console.error('Erro no card:', err));
+    }
 
-    // Atualiza perfil comportamental a cada 5 mensagens
+    // Atualiza perfil a cada 5 mensagens
     const totalMensagens = historico.length + 2;
     if (totalMensagens % 5 === 0) {
       const historicoAtualizado = [...historico, { role: 'user', content: mensagemFinal }, { role: 'assistant', content: reply }];
