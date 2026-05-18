@@ -92,6 +92,82 @@ async function transcreverAudio(audioUrl) {
   return data.text;
 }
 
+async function getPerfilComportamental(phone) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/perfil_comportamental?phone=eq.${phone}`, {
+    headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+  });
+  const data = await res.json();
+  return data.length > 0 ? data[0] : null;
+}
+
+async function atualizarPerfilComportamental(phone, historico) {
+  try {
+    const promptAnalise = `Analise essa conversa entre o Pace (assistente de corrida) e o corredor e extraia informacoes comportamentais. Responda APENAS com um JSON valido, sem texto adicional:
+{
+  "tende_a_se_cobrar": true ou false (se a pessoa e autoexigente),
+  "reage_bem_incentivo": true ou false (se responde bem a motivacao),
+  "tende_a_exagerar": true ou false (se tende a exagerar nos treinos),
+  "prefere_linguagem": "leve" ou "direta" ou "tecnica",
+  "responde_melhor_a": "texto curto descrevendo o que funciona melhor com essa pessoa",
+  "padrao_ausencia": "texto curto sobre padrao de ausencia se houver",
+  "melhor_dia_semana": "dia da semana se mencionado, senao null",
+  "pior_dia_semana": "dia da semana se mencionado, senao null",
+  "notas_comportamentais": "observacoes importantes sobre o corredor em texto livre"
+}
+
+Conversa:
+${historico.map(h => `${h.role === 'user' ? 'Corredor' : 'Pace'}: ${h.content}`).join('\n')}`;
+
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.CLAUDE_API_KEY, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 500,
+        messages: [{ role: 'user', content: promptAnalise }]
+      })
+    });
+    const data = await res.json();
+    const texto = data.content?.[0]?.text;
+    if (!texto) return;
+
+    const perfil = JSON.parse(texto);
+    const perfilExistente = await getPerfilComportamental(phone);
+
+    if (perfilExistente) {
+      await fetch(`${SUPABASE_URL}/rest/v1/perfil_comportamental?phone=eq.${phone}`, {
+        method: 'PATCH',
+        headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+        body: JSON.stringify({ ...perfil, updated_at: new Date().toISOString() })
+      });
+    } else {
+      await fetch(`${SUPABASE_URL}/rest/v1/perfil_comportamental`, {
+        method: 'POST',
+        headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone, ...perfil })
+      });
+    }
+    console.log(`Perfil comportamental atualizado para ${phone}`);
+  } catch (err) {
+    console.error('Erro ao atualizar perfil comportamental:', err);
+  }
+}
+
+function montarContextoPerfil(perfil) {
+  if (!perfil) return '';
+  const linhas = [];
+  if (perfil.notas_comportamentais) linhas.push(`Notas sobre o corredor: ${perfil.notas_comportamentais}`);
+  if (perfil.tende_a_se_cobrar) linhas.push('Tende a ser autoexigente — acolher sem pressionar.');
+  if (perfil.reage_bem_incentivo) linhas.push('Responde bem a motivacao e incentivo.');
+  if (perfil.tende_a_exagerar) linhas.push('Tende a exagerar — lembrar de moderacao.');
+  if (perfil.prefere_linguagem) linhas.push(`Prefere linguagem: ${perfil.prefere_linguagem}.`);
+  if (perfil.responde_melhor_a) linhas.push(`Responde melhor a: ${perfil.responde_melhor_a}.`);
+  if (perfil.melhor_dia_semana) linhas.push(`Melhor dia para treinar: ${perfil.melhor_dia_semana}.`);
+  if (perfil.pior_dia_semana) linhas.push(`Dia mais dificil: ${perfil.pior_dia_semana}.`);
+  if (linhas.length === 0) return '';
+  return `\n\nCONTEXTO DO CORREDOR (use para personalizar suas respostas):\n${linhas.join('\n')}`;
+}
+
 app.get('/', (req, res) => {
   res.send('Paceme.ia webhook online');
 });
@@ -142,23 +218,47 @@ app.post('/webhook', async (req, res) => {
     }
     if (!phone || !mensagemFinal) return res.sendStatus(200);
     console.log(`Mensagem de ${phone}: ${mensagemFinal}`);
+
     const usuario = await getOuCriarUsuario(phone);
     if (!trialAtivo(usuario)) {
       await enviarWhatsApp(phone, `Ola! Seu periodo de teste de ${usuario.trial_dias} dias chegou ao fim. Para continuar com o Pace, assine o Paceme.ia: https://wa.me/5548991969971`);
       return res.sendStatus(200);
     }
-    const historico = await getHistorico(phone);
+
+    const [historico, perfil] = await Promise.all([
+      getHistorico(phone),
+      getPerfilComportamental(phone)
+    ]);
+
+    const contextoPerfil = montarContextoPerfil(perfil);
+    const systemPromptFinal = process.env.SYSTEM_PROMPT + contextoPerfil;
+
     const messages = [...historico.map(h => ({ role: h.role, content: h.content })), { role: 'user', content: mensagemFinal }];
-    const claudeData = await chamarClaude(messages);
+
+    const res2 = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.CLAUDE_API_KEY, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify({ model: process.env.CLAUDE_MODEL || 'claude-haiku-4-5-20251001', max_tokens: 1024, system: systemPromptFinal, messages })
+    });
+    const claudeData = await res2.json();
     const reply = claudeData.content?.[0]?.text;
+
     if (!reply) {
       console.log('Claude sem resposta:', JSON.stringify(claudeData));
       return res.sendStatus(200);
     }
+
     await salvarMensagem(phone, 'user', mensagemFinal);
     await salvarMensagem(phone, 'assistant', reply);
-    const zapiData = await enviarWhatsApp(phone, reply);
-    console.log(`Z-API: ${JSON.stringify(zapiData)}`);
+    await enviarWhatsApp(phone, reply);
+
+    // Atualiza perfil comportamental em background a cada 5 mensagens
+    const totalMensagens = historico.length + 2;
+    if (totalMensagens % 5 === 0) {
+      const historicoAtualizado = [...historico, { role: 'user', content: mensagemFinal }, { role: 'assistant', content: reply }];
+      atualizarPerfilComportamental(phone, historicoAtualizado);
+    }
+
     res.sendStatus(200);
   } catch (err) {
     console.error('Erro:', err);
