@@ -176,7 +176,8 @@ Mensagem: "${mensagem}"`;
     const data = await res.json();
     const texto = data.content?.[0]?.text;
     if (!texto) return null;
-    const resultado = JSON.parse(texto.trim());
+    const limpo = texto.trim().replace(/```json|```/g, '').trim();
+    const resultado = JSON.parse(limpo);
     return resultado.e_registro_treino ? resultado : null;
   } catch (err) {
     console.error('Erro extrairDadosTreino:', err);
