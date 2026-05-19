@@ -146,17 +146,55 @@ ${historico.map(h => `${h.role === 'user' ? 'Corredor' : 'Pace'}: ${h.content}`)
   }
 }
 
-function montarContextoPerfil(perfil) {
-  if (!perfil) return '';
+// NOVO: atualiza streak de treinos consecutivos
+async function atualizarStreak(phone) {
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/usuarios?phone=eq.${phone}&select=streak_atual,ultimo_treino_data`, {
+      headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+    });
+    const data = await res.json();
+    const { streak_atual = 0, ultimo_treino_data = null } = data[0] || {};
+
+    const hoje = new Date().toISOString().split('T')[0];
+    if (ultimo_treino_data === hoje) return streak_atual;
+
+    const ontem = new Date();
+    ontem.setDate(ontem.getDate() - 1);
+    const ontemStr = ontem.toISOString().split('T')[0];
+
+    const novoStreak = ultimo_treino_data === ontemStr ? (streak_atual || 0) + 1 : 1;
+
+    await fetch(`${SUPABASE_URL}/rest/v1/usuarios?phone=eq.${phone}`, {
+      method: 'PATCH',
+      headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+      body: JSON.stringify({ streak_atual: novoStreak, ultimo_treino_data: hoje })
+    });
+
+    console.log(`Streak atualizado para ${phone}: ${novoStreak} dias`);
+    return novoStreak;
+  } catch (err) {
+    console.error('Erro atualizarStreak:', err);
+    return 0;
+  }
+}
+
+// MODIFICADO: aceita streak para incluir no contexto enviado ao Claude
+function montarContextoPerfil(perfil, streak = 0) {
   const linhas = [];
-  if (perfil.notas_comportamentais) linhas.push(`Notas sobre o corredor: ${perfil.notas_comportamentais}`);
-  if (perfil.tende_a_se_cobrar) linhas.push('Tende a ser autoexigente — acolher sem pressionar.');
-  if (perfil.reage_bem_incentivo) linhas.push('Responde bem a motivacao e incentivo.');
-  if (perfil.tende_a_exagerar) linhas.push('Tende a exagerar — lembrar de moderacao.');
-  if (perfil.prefere_linguagem) linhas.push(`Prefere linguagem: ${perfil.prefere_linguagem}.`);
-  if (perfil.responde_melhor_a) linhas.push(`Responde melhor a: ${perfil.responde_melhor_a}.`);
-  if (perfil.melhor_dia_semana) linhas.push(`Melhor dia para treinar: ${perfil.melhor_dia_semana}.`);
-  if (perfil.pior_dia_semana) linhas.push(`Dia mais dificil: ${perfil.pior_dia_semana}.`);
+  if (perfil) {
+    if (perfil.notas_comportamentais) linhas.push(`Notas sobre o corredor: ${perfil.notas_comportamentais}`);
+    if (perfil.tende_a_se_cobrar) linhas.push('Tende a ser autoexigente â€” acolher sem pressionar.');
+    if (perfil.reage_bem_incentivo) linhas.push('Responde bem a motivacao e incentivo.');
+    if (perfil.tende_a_exagerar) linhas.push('Tende a exagerar â€” lembrar de moderacao.');
+    if (perfil.prefere_linguagem) linhas.push(`Prefere linguagem: ${perfil.prefere_linguagem}.`);
+    if (perfil.responde_melhor_a) linhas.push(`Responde melhor a: ${perfil.responde_melhor_a}.`);
+    if (perfil.melhor_dia_semana) linhas.push(`Melhor dia para treinar: ${perfil.melhor_dia_semana}.`);
+    if (perfil.pior_dia_semana) linhas.push(`Dia mais dificil: ${perfil.pior_dia_semana}.`);
+  }
+  // NOVO: streak no contexto â€” Claude menciona quando relevante
+  if (streak > 0) {
+    linhas.push(`Streak atual: ${streak} dia(s) consecutivo(s) com treino registrado. Mencione isso de forma natural quando fizer sentido â€” celebre marcos (3, 7, 14, 30 dias) com mais entusiasmo.`);
+  }
   if (linhas.length === 0) return '';
   return `\n\nCONTEXTO DO CORREDOR:\n${linhas.join('\n')}`;
 }
@@ -187,7 +225,7 @@ Mensagem: "${mensagem}"`;
 
 async function gerarCardTreino(nome, distancia, pace, tempo) {
   try {
-    const html = `<div style="width:600px;height:600px;background:#0a0a0a;position:relative;overflow:hidden;font-family:Arial Black,Impact,sans-serif;"><div style="position:absolute;left:0;top:0;width:100%;height:6px;background:#8DFF5A;"></div><div style="position:absolute;left:0;bottom:0;width:100%;height:6px;background:#8DFF5A;"></div><div style="position:absolute;left:0;top:100px;width:280px;opacity:0.2;"><div style="height:4px;background:#8DFF5A;margin-bottom:18px;width:200px;border-radius:4px;"></div><div style="height:4px;background:#8DFF5A;margin-bottom:18px;width:150px;border-radius:4px;"></div><div style="height:4px;background:#8DFF5A;margin-bottom:18px;width:240px;border-radius:4px;"></div><div style="height:4px;background:#8DFF5A;margin-bottom:18px;width:180px;border-radius:4px;"></div></div><div style="position:absolute;top:36px;left:50px;font-size:52px;font-weight:900;color:white;letter-spacing:-1px;">PACEME<span style="color:#8DFF5A;font-size:32px;">.ia</span></div><div style="position:absolute;top:100px;left:50px;font-size:16px;letter-spacing:6px;color:#8DFF5A;font-weight:900;">TREINO CONCLUIDO</div><div style="position:absolute;top:135px;left:50px;font-size:26px;color:#ccc;font-weight:700;">${nome || 'Corredor'}</div><div style="position:absolute;top:190px;left:50px;"><div style="font-size:14px;letter-spacing:4px;color:#8DFF5A;margin-bottom:6px;">DISTANCIA</div><div style="font-size:80px;line-height:72px;color:white;font-weight:900;">${distancia || '-'}<span style="font-size:28px;color:#8DFF5A;margin-left:6px;">km</span></div></div><div style="position:absolute;top:330px;left:50px;"><div style="font-size:14px;letter-spacing:4px;color:#8DFF5A;margin-bottom:6px;">PACE</div><div style="font-size:72px;line-height:64px;color:white;font-weight:900;">${pace || '-'}<span style="font-size:24px;color:#8DFF5A;margin-left:6px;">/km</span></div></div><div style="position:absolute;top:460px;left:50px;"><div style="font-size:14px;letter-spacing:4px;color:#8DFF5A;margin-bottom:6px;">TEMPO</div><div style="font-size:52px;line-height:48px;color:white;font-weight:900;">${tempo || '-'}<span style="font-size:20px;color:#8DFF5A;margin-left:6px;">min</span></div></div><div style="position:absolute;right:50px;top:190px;width:200px;padding:20px;border:2px dashed rgba(141,255,90,0.4);border-radius:16px;text-align:center;"><div style="font-size:14px;color:#8DFF5A;letter-spacing:2px;margin-bottom:8px;">PATROCINADOR</div><div style="font-size:18px;color:#555;font-weight:900;">SUA MARCA AQUI</div></div><div style="position:absolute;bottom:20px;left:50px;font-size:14px;color:#555;">paceme.ia · seu parceiro de corrida</div><div style="position:absolute;bottom:20px;right:50px;font-size:14px;color:#8DFF5A;font-weight:900;">@paceme.ia</div></div>`;
+    const html = `<div style="width:600px;height:600px;background:#0a0a0a;position:relative;overflow:hidden;font-family:Arial Black,Impact,sans-serif;"><div style="position:absolute;left:0;top:0;width:100%;height:6px;background:#8DFF5A;"></div><div style="position:absolute;left:0;bottom:0;width:100%;height:6px;background:#8DFF5A;"></div><div style="position:absolute;left:0;top:100px;width:280px;opacity:0.2;"><div style="height:4px;background:#8DFF5A;margin-bottom:18px;width:200px;border-radius:4px;"></div><div style="height:4px;background:#8DFF5A;margin-bottom:18px;width:150px;border-radius:4px;"></div><div style="height:4px;background:#8DFF5A;margin-bottom:18px;width:240px;border-radius:4px;"></div><div style="height:4px;background:#8DFF5A;margin-bottom:18px;width:180px;border-radius:4px;"></div></div><div style="position:absolute;top:36px;left:50px;font-size:52px;font-weight:900;color:white;letter-spacing:-1px;">PACEME<span style="color:#8DFF5A;font-size:32px;">.ia</span></div><div style="position:absolute;top:100px;left:50px;font-size:16px;letter-spacing:6px;color:#8DFF5A;font-weight:900;">TREINO CONCLUIDO</div><div style="position:absolute;top:135px;left:50px;font-size:26px;color:#ccc;font-weight:700;">${nome || 'Corredor'}</div><div style="position:absolute;top:190px;left:50px;"><div style="font-size:14px;letter-spacing:4px;color:#8DFF5A;margin-bottom:6px;">DISTANCIA</div><div style="font-size:80px;line-height:72px;color:white;font-weight:900;">${distancia || '-'}<span style="font-size:28px;color:#8DFF5A;margin-left:6px;">km</span></div></div><div style="position:absolute;top:330px;left:50px;"><div style="font-size:14px;letter-spacing:4px;color:#8DFF5A;margin-bottom:6px;">PACE</div><div style="font-size:72px;line-height:64px;color:white;font-weight:900;">${pace || '-'}<span style="font-size:24px;color:#8DFF5A;margin-left:6px;">/km</span></div></div><div style="position:absolute;top:460px;left:50px;"><div style="font-size:14px;letter-spacing:4px;color:#8DFF5A;margin-bottom:6px;">TEMPO</div><div style="font-size:52px;line-height:48px;color:white;font-weight:900;">${tempo || '-'}<span style="font-size:20px;color:#8DFF5A;margin-left:6px;">min</span></div></div><div style="position:absolute;right:50px;top:190px;width:200px;padding:20px;border:2px dashed rgba(141,255,90,0.4);border-radius:16px;text-align:center;"><div style="font-size:14px;color:#8DFF5A;letter-spacing:2px;margin-bottom:8px;">PATROCINADOR</div><div style="font-size:18px;color:#555;font-weight:900;">SUA MARCA AQUI</div></div><div style="position:absolute;bottom:20px;left:50px;font-size:14px;color:#555;">paceme.ia Â· seu parceiro de corrida</div><div style="position:absolute;bottom:20px;right:50px;font-size:14px;color:#8DFF5A;font-weight:900;">@paceme.ia</div></div>`;
 
     const credentials = Buffer.from(`${process.env.HCTI_USER_ID}:${process.env.HCTI_API_KEY}`).toString('base64');
     const res = await fetch('https://hcti.io/v1/image', {
@@ -208,6 +246,7 @@ app.get('/', (req, res) => {
   res.send('Paceme.ia webhook online');
 });
 
+// MODIFICADO: mensagem personalizada com nome, inclui usuÃ¡rios em trial, menciona streak
 app.get('/daily-message', async (req, res) => {
   try {
     const agora = new Date();
@@ -215,25 +254,81 @@ app.get('/daily-message', async (req, res) => {
     if (horaBrasilia < 7 || horaBrasilia >= 8) {
       return res.json({ ok: true, msg: 'Fora do horario de envio', hora: horaBrasilia });
     }
-    const resultado = await fetch(`${SUPABASE_URL}/rest/v1/usuarios?status=eq.ativo&order=created_at.asc`, {
-      headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
-    });
+
+    const resultado = await fetch(
+      `${SUPABASE_URL}/rest/v1/usuarios?select=phone,nome,status,trial_inicio,trial_dias,streak_atual&order=created_at.asc`,
+      { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } }
+    );
     const usuarios = await resultado.json();
+
     const mensagens = [
-      'Bom dia! Como voce ta hoje? O Pace ta aqui, pronto pra correr junto com voce. Vai rolar um treino hoje?',
-      'Oi! Mais um dia, mais uma chance de evoluir no seu ritmo. Como ta o corpo hoje?',
-      'Bom dia! Consistencia e o segredo — e voce ja provou que tem. Vai correr hoje?',
-      'Oi! O Pace nao esquece de voce nao. Como foi o sono? Ta pronto pra mais um passo?',
-      'Bom dia! Cada treino conta, mesmo os menores. O que voce ta sentindo hoje?'
+      'Como voce ta hoje? O Pace ta aqui, pronto pra correr junto com voce. Vai rolar um treino hoje?',
+      'Mais um dia, mais uma chance de evoluir no seu ritmo. Como ta o corpo hoje?',
+      'Consistencia e o segredo â€” e voce ja provou que tem. Vai correr hoje?',
+      'O Pace nao esquece de voce nao. Como foi o sono? Ta pronto pra mais um passo?',
+      'Cada treino conta, mesmo os menores. O que voce ta sentindo hoje?'
     ];
+
+    let enviadas = 0;
     for (const usuario of usuarios) {
-      const msg = mensagens[Math.floor(Math.random() * mensagens.length)];
-      await enviarWhatsApp(usuario.phone, msg);
+      if (!trialAtivo(usuario)) continue;
+
+      const primeiroNome = (usuario.nome || '').split(' ')[0].trim();
+      const saudacao = primeiroNome ? `Bom dia, ${primeiroNome}!` : 'Bom dia!';
+      const corpo = mensagens[Math.floor(Math.random() * mensagens.length)];
+
+      let extras = '';
+      const streak = usuario.streak_atual || 0;
+      if (streak >= 3) extras = ` Voce ta em chama â€” ${streak} dias seguidos de treino!`;
+
+      await enviarWhatsApp(usuario.phone, `${saudacao} ${corpo}${extras}`);
       await new Promise(r => setTimeout(r, 1500));
+      enviadas++;
     }
-    res.json({ ok: true, enviadas: usuarios.length });
+
+    res.json({ ok: true, enviadas });
   } catch (err) {
     console.error('Erro daily-message:', err);
+    res.status(500).json({ ok: false });
+  }
+});
+
+// NOVO: webhook Kiwify â€” ativa nÃºmero e define trial ao receber compra aprovada
+app.post('/webhook/kiwify', async (req, res) => {
+  try {
+    const { event, data } = req.body;
+    if (event !== 'order_approved') return res.json({ ok: true, msg: 'evento ignorado' });
+
+    const phone = data?.customer?.mobile?.replace(/\D/g, '');
+    const nome  = data?.customer?.name || '';
+    const plano = data?.product?.name  || '';
+
+    if (!phone) return res.status(400).json({ ok: false, msg: 'phone ausente' });
+
+    // Planos com "fundador" no nome recebem 30 dias; demais recebem 15
+    const trial_dias = plano.toLowerCase().includes('fundador') ? 30 : 15;
+
+    await fetch(`${SUPABASE_URL}/rest/v1/usuarios`, {
+      method: 'POST',
+      headers: {
+        'apikey': SUPABASE_KEY,
+        'Authorization': `Bearer ${SUPABASE_KEY}`,
+        'Content-Type': 'application/json',
+        'Prefer': 'resolution=merge-duplicates'
+      },
+      body: JSON.stringify({
+        phone,
+        nome,
+        status: 'ativo',
+        trial_inicio: new Date().toISOString(),
+        trial_dias
+      })
+    });
+
+    console.log(`Kiwify: ${phone} (${nome}) ativado â€” plano "${plano}", trial ${trial_dias}d`);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Erro webhook/kiwify:', err);
     res.status(500).json({ ok: false });
   }
 });
@@ -262,11 +357,12 @@ app.post('/webhook', async (req, res) => {
       getPerfilComportamental(phone)
     ]);
 
-    const contextoPerfil = montarContextoPerfil(perfil);
+    // MODIFICADO: passa streak do usuÃ¡rio para o contexto do Claude
+    const streak = usuario.streak_atual || 0;
+    const contextoPerfil = montarContextoPerfil(perfil, streak);
     const systemPromptFinal = process.env.SYSTEM_PROMPT + contextoPerfil;
     const messages = [...historico.map(h => ({ role: h.role, content: h.content })), { role: 'user', content: mensagemFinal }];
 
-    // Roda deteccao de treino e Claude em paralelo
     const [claudeData, dadosTreino] = await Promise.all([
       chamarClaude(messages, systemPromptFinal),
       extrairDadosTreino(mensagemFinal)
@@ -282,11 +378,14 @@ app.post('/webhook', async (req, res) => {
     await salvarMensagem(phone, 'assistant', reply);
     await enviarWhatsApp(phone, reply);
 
-    // Se detectou treino, gera e envia card
     if (dadosTreino) {
       console.log(`Treino detectado para ${phone}:`, dadosTreino);
+
+      // NOVO: atualiza streak quando treino Ã© registrado
+      atualizarStreak(phone);
+
       const cardUrl = await gerarCardTreino(
-        dadosTreino.nome_corredor || 'Corredor',
+        dadosTreino.nome_corredor || usuario.nome || 'Corredor',
         dadosTreino.distancia,
         dadosTreino.pace,
         dadosTreino.tempo
@@ -298,7 +397,6 @@ app.post('/webhook', async (req, res) => {
       }
     }
 
-    // Atualiza perfil a cada 5 mensagens
     const totalMensagens = historico.length + 2;
     if (totalMensagens % 5 === 0) {
       const historicoAtualizado = [...historico, { role: 'user', content: mensagemFinal }, { role: 'assistant', content: reply }];
