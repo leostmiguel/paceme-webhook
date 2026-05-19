@@ -10,6 +10,12 @@ setInterval(() => {
   fetch('https://paceme-webhook.onrender.com/').catch(() => {});
 }, 4 * 60 * 1000);
 
+// guarda a data em que a mensagem diÃ¡ria jÃ¡ foi disparada (reseta se o processo reiniciar, o que Ã© ok)
+let ultimoEnvioDiario = null;
+
+// deduplicaÃ§Ã£o do webhook: phone+conteÃºdo -> timestamp do Ãºltimo processamento
+const mensagensRecentes = new Map();
+
 async function getOuCriarUsuario(phone) {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/usuarios?phone=eq.${phone}`, {
     headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
@@ -255,6 +261,13 @@ app.get('/daily-message', async (req, res) => {
       return res.json({ ok: true, msg: 'Fora do horario de envio', hora: horaBrasilia });
     }
 
+    // impede reenvio se o UptimeRobot chamar mais de uma vez na mesma janela de 7-8h
+    const hoje = new Date().toISOString().split('T')[0];
+    if (ultimoEnvioDiario === hoje) {
+      return res.json({ ok: true, msg: 'Mensagem diaria ja enviada hoje' });
+    }
+    ultimoEnvioDiario = hoje;
+
     const resultado = await fetch(
       `${SUPABASE_URL}/rest/v1/usuarios?select=phone,nome,status,trial_inicio,trial_dias,streak_atual&order=created_at.asc`,
       { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } }
@@ -337,6 +350,24 @@ app.post('/webhook', async (req, res) => {
   try {
     const body = req.body;
     if (body.fromMe) return res.sendStatus(200);
+
+    // deduplicaÃ§Ã£o: messageId da Z-API tem prioridade; fallback para phone+conteÃºdo bruto
+    const messageId = body.messageId || body.zaapId;
+    const rawContent = body.text?.message || body.audio?.audioUrl || '';
+    const chaveDedup = messageId || `${body.phone}:${rawContent}`;
+    const agora = Date.now();
+    const ultimaVez = mensagensRecentes.get(chaveDedup);
+    if (ultimaVez && agora - ultimaVez < 30000) {
+      console.log(`Duplicata ignorada: ${chaveDedup}`);
+      return res.sendStatus(200);
+    }
+    mensagensRecentes.set(chaveDedup, agora);
+    if (mensagensRecentes.size > 500) {
+      for (const [k, t] of mensagensRecentes) {
+        if (agora - t > 60000) mensagensRecentes.delete(k);
+      }
+    }
+
     const phone = body.phone;
     const message = body.text?.message;
     let mensagemFinal = message;
@@ -344,6 +375,7 @@ app.post('/webhook', async (req, res) => {
       mensagemFinal = await transcreverAudio(body.audio.audioUrl);
     }
     if (!phone || !mensagemFinal) return res.sendStatus(200);
+
     console.log(`Mensagem de ${phone}: ${mensagemFinal}`);
 
     const usuario = await getOuCriarUsuario(phone);
