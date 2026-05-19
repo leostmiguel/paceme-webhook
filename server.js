@@ -205,6 +205,31 @@ function montarContextoPerfil(perfil, streak = 0) {
   return `\n\nCONTEXTO DO CORREDOR:\n${linhas.join('\n')}`;
 }
 
+async function tentarSalvarNome(phone, mensagem) {
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.CLAUDE_API_KEY, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 20,
+        messages: [{ role: 'user', content: `Extraia apenas o primeiro nome prÃ³prio da pessoa nessa mensagem de apresentaÃ§Ã£o. Responda SOMENTE com o nome, sem pontuaÃ§Ã£o. Se nÃ£o houver nome claro, responda null.\n\nMensagem: "${mensagem}"` }]
+      })
+    });
+    const data = await res.json();
+    const nome = data.content?.[0]?.text?.trim();
+    if (!nome || nome.toLowerCase() === 'null') return;
+    await fetch(`${SUPABASE_URL}/rest/v1/usuarios?phone=eq.${phone}`, {
+      method: 'PATCH',
+      headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+      body: JSON.stringify({ nome })
+    });
+    console.log(`Nome salvo para ${phone}: ${nome}`);
+  } catch (err) {
+    console.error('Erro tentarSalvarNome:', err);
+  }
+}
+
 async function extrairDadosTreino(mensagem) {
   try {
     const prompt = `Analise se o corredor esta registrando um treino de corrida com dados numericos. Responda APENAS com JSON valido:
@@ -409,6 +434,9 @@ app.post('/webhook', async (req, res) => {
     await salvarMensagem(phone, 'user', mensagemFinal);
     await salvarMensagem(phone, 'assistant', reply);
     await enviarWhatsApp(phone, reply);
+
+    // tenta extrair e salvar o nome do onboarding enquanto o restante roda
+    if (!usuario.nome) tentarSalvarNome(phone, mensagemFinal);
 
     if (dadosTreino) {
       console.log(`Treino detectado para ${phone}:`, dadosTreino);
